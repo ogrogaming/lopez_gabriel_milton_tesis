@@ -1,4 +1,4 @@
-# Milton Orchestrator
+# Milton Orquestador
 
 Este flujo orquesta todas las consultas dirigidas a Milton desde Slack: recibe el mensaje, limpia el texto, clasifica la intención (definiciones, revenue, scoring o desconocido) y deriva la conversación al sub-workflow correspondiente. :contentReference[oaicite:0]{index=0}  
 
