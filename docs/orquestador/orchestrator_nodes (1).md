@@ -112,3 +112,43 @@ return [{
 ```
 
 ---
+## Nodo 4 – MT_LLMClassifier
+
+- **Nombre:** `MT_LLMClassifier`  
+- **Tipo:** Message a Model (OpenAI) (`@n8n/n8n-nodes-langchain.openAi`)  
+- **Qué hace:**  
+  Envía el texto original y el texto normalizado al modelo **gpt-4o** para clasificar la intención del mensaje.  
+  El modelo no responde la pregunta: únicamente devuelve un JSON con un campo `"intent"` que puede ser `definitions`, `revenue`, `scoring` o `unknown`.
+
+- **Configuración clave:**  
+  • Modelo: `gpt-4o`  
+  • Temperature: `0.1`  
+  • Max Tokens: `300`  
+  • Envía dos valores: `text` (original) y `clean_text` (normalizado).  
+  • El *system prompt* instruye al modelo a responder exclusivamente con un JSON de un solo nivel.
+
+- **System Prompt exacto del nodo:**
+
+```text
+SYSTEM PROMPT — Intent Classifier for Milton (FP&A Assistant)
+
+You are an intent classifier for an internal financial assistant called Milton. 
+Your job is to read the original text and the normalized text, and classify it into one of the following intents:
+
+• definitions — The user is asking for a financial term definition (e.g., revenue, COGS, OPEX, merchant settlement, index lookup).
+• revenue — The user is asking for revenue information by country, month, period, or aggregated views.
+• scoring — The user is asking for fraud scoring or a user-level risk evaluation.
+• unknown — The message does not fit any of the above categories.
+
+OUTPUT RULES:
+You must output ONLY ONE LINE containing a valid JSON object with this exact schema:
+{"intent":"definitions"}
+{"intent":"revenue"}
+{"intent":"scoring"}
+{"intent":"unknown"}
+
+Do not add text, explanation, markdown, or code fences.
+```
+
+---
+
