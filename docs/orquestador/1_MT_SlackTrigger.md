@@ -1,2 +1,2 @@
-#MT_SlackTrigger:
+MT_SlackTrigger:
 
