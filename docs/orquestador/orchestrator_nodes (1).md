@@ -34,3 +34,41 @@ Este flujo orquesta todas las consultas dirigidas a Milton desde Slack: recibe e
     }
   }
 
+---
+
+## Nodo 2 – MT_SetFields
+
+- **Nombre:** `MT_SetFields`  
+- **Tipo:** Set (`n8n-nodes-base.set`)  
+- **Qué hace:**  
+  Extrae y normaliza los campos básicos del evento de Slack. Asegura que siempre existan `text`, `channel`, `user`, `ts` y `thread_ts`, tomando valores desde cualquier variante del payload (`json`, `event`, `body.event`). Prepara un objeto limpio y plano para el resto del flujo.
+
+- **Configuración clave:**  
+  Usa asignaciones individuales para cada campo. No crea items adicionales.
+
+- **Código exacto (expresiones del nodo):**
+
+```js
+text = {{$json.text || $json.event?.text || $json.body?.event?.text || ''}}
+
+channel = {{ 
+  ($json.channel || $json.event?.channel || $json.body?.event?.channel || '')
+    .replace(/[\u000A\u000D\u202F\u00A0\s]+$/g, '')
+    .trim()
+}}
+
+user = {{$json.user || $json.event?.user || $json.body?.event?.user || ''}}
+
+ts = {{$json.ts || $json.event?.ts || $json.body?.event?.ts || ''}}
+
+thread_ts = {{
+  $json.thread_ts ||
+  $json.event?.thread_ts ||
+  $json.body?.event?.thread_ts ||
+  $json.ts ||
+  $json.event?.ts ||
+  $json.body?.event?.ts ||
+  ''
+}}
+
+---
