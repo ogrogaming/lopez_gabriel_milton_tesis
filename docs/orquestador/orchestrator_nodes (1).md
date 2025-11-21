@@ -313,4 +313,98 @@ Output: {"intent":"unknown"}
 ```
 
 ---
+## Nodo 5 – MT_CombineOriginalAndLLM
+
+- **Nombre:** `MT_CombineOriginalAndLLM`  
+- **Tipo:** Merge (`n8n-nodes-base.merge`)  
+- **Qué hace:**  
+  Combina en un solo item los dos flujos provenientes de los nodos anteriores:  
+  1) el mensaje normalizado (`MT_CleanNormalize`)  
+  2) la respuesta del clasificador LLM (`MT_LLMClassifier`)  
+  El resultado es un item unificado que contiene tanto el texto limpio como la salida del modelo, para poder ser parseado correctamente en el siguiente nodo.
+
+- **Configuración clave:**  
+  • Modo de merge: **Append**  
+  • Número de items combinados: **1 a 1**  
+  • No realiza procesamiento adicional; solo agrupa los outputs en un array que luego será consumido por `MT_ParseLLM`.
+
+---
+## Nodo 6 – MT_ParseLLM
+
+- **Nombre:** `MT_ParseLLM`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+- **Qué hace:**  
+  Toma los dos items combinados por el merge (texto original/normalizado + respuesta del LLM) y produce **un único objeto final**.  
+  Identifica cuál item pertenece al LLM y cuál al mensaje original, parsea el JSON devuelto por el modelo y reconstruye todos los campos necesarios (`intent`, `entities`, `channel`, `thread_ts`, `user`, etc.).  
+  Su función es dejar el input listo y homogéneo para el router de intención.
+
+- **Configuración clave:**  
+  • Entrada múltiple desde el Merge (2 items).  
+  • Produce una sola salida consolidada.  
+  • Valida y normaliza campos críticos (especialmente `channel` y `intent`).  
+  • Captura errores de parseo del JSON del modelo y asigna `unknown` si corresponde.
+
+```js
+// === Utilities ===
+const S = v => (v == null ? '' : String(v)).trim();
+const tryParse = s => { try { return JSON.parse(s); } catch { return null; } };
+
+// === Items entrantes (del Merge append) ===
+const items = $input.all();
+
+// 1) Item del LLM (assistant)
+const llmItem =
+  items.find(i => i.json?.message?.role === 'assistant') ||
+  items.find(i => typeof i.json?.content === 'string') || null;
+
+// 2) Item original (texto/canales)
+const origItem =
+  items.find(i => i.json?.text || i.json?.clean_text || i.json?.channel) ||
+  items[0] || { json: {} };
+
+// 3) Slack trigger por si falta algo
+const trig = $item(0, 'Slack Trigger')?.json || {};
+
+// === Campos de contexto (limpios) ===
+const text       = S(origItem.json.text) || S(trig.text) || S(trig.event?.text);
+const clean_text = S(origItem.json.clean_text) || S(text).toLowerCase();
+
+let channel = S(origItem.json.channel) || S(trig.event?.channel) || S(trig.channel);
+channel = channel.replace(/\s+/g, ''); // quita espacios/saltos
+
+let thread_ts =
+  S(origItem.json.thread_ts) ||
+  S(trig.event?.thread_ts) ||
+  S(origItem.json.ts) ||
+  S(trig.event?.ts) ||
+  S(trig.ts);
+
+// === Parsear JSON del LLM ===
+const raw = S(llmItem?.json?.message?.content || llmItem?.json?.content || '');
+const obj = tryParse(raw) || tryParse(raw.replace(/```json|```/g, '')) || null;
+const intent = (S(obj?.intent).toLowerCase()) || 'unknown';
+
+// === Salida para el router ===
+return [{
+  text,
+  clean_text,
+  channel,
+  user: S(origItem.json.user) || S(trig.event?.user) || S(trig.user),
+  ts:   S(origItem.json.ts)   || S(trig.event?.ts)   || S(trig.ts),
+  thread_ts,
+  intent,
+  entities: {
+    term:        obj?.entities?.term ?? null,
+    country:     obj?.entities?.country ?? null,
+    merchant_id: obj?.entities?.merchant_id ?? null,
+    month:       obj?.entities?.month ?? null,
+    year:        obj?.entities?.year ?? null,
+    period:      obj?.entities?.period ?? null,
+  },
+  confidence: typeof obj?.confidence === 'number' ? obj.confidence : 0,
+}];
+
+```
+
+---
 
