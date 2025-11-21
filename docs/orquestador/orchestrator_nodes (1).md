@@ -70,5 +70,45 @@ thread_ts = {{
   $json.body?.event?.ts ||
   ''
 }}
+```
+
+---
+## Nodo 3 – MT_CleanNormalize
+
+- **Nombre:** `MT_CleanNormalize`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+- **Qué hace:**  
+  Limpia y normaliza el texto recibido desde Slack.  
+  Elimina menciones `<@user>`, colapsa espacios, pasa todo a minúsculas y remueve acentos.  
+  Devuelve el texto original (`text`) y una versión normalizada (`clean_text`) junto con los metadatos del mensaje.
+
+- **Configuración clave:**  
+  • No usa inputs adicionales.  
+  • Produce **un solo item** con el texto limpio.  
+
+- **Código exacto del nodo:**
+
+```js
+function deacc(s) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+const text = ($json.text || '').trim();
+
+// quita menciones tipo <@UXXXXXX> y colapsa espacios
+let t = text.replace(/<@[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+// lower + sin acentos
+t = deacc(t.toLowerCase());
+
+return [{
+  text: $json.text || '',
+  clean_text: t,
+  channel: $json.channel || '',
+  user: $json.user || '',
+  ts: $json.ts || '',
+  thread_ts: $json.thread_ts || $json.ts
+}];
+```
 
 ---
