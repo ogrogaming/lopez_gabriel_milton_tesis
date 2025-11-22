@@ -1,8 +1,8 @@
 # Flujo de Fraud Scoring
 
-Este sub-flujo recibe una consulta desde el orquestador pidiendo el score de fraude para uno o varios usuarios (por ejemplo: 
+*Este sub-flujo recibe una consulta desde el orquestador pidiendo el score de fraude para uno o varios usuarios (por ejemplo: 
 “Provide fraud score for user id 20761572”), extrae los IDs, arma el perfil transaccional y de KYC desde el DW, calcula un riesgo 
-numérico y devuelve un resumen legible en Slack con el score y las principales razones.
+numérico y devuelve un resumen legible en Slack con el score y las principales razones.*
 ---
 
 ## Nodo 1 – FS_Trigger
