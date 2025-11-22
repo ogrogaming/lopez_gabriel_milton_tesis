@@ -507,3 +507,153 @@ return [{ ...$json, route_index }];
 ```
 
 ---
+## Nodo 10 – MT_FinalizeChannel
+
+- **Nombre:** `MT_FinalizeChannel`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+- **Qué hace:**  
+  Realiza una **validación y limpieza final** de los campos `channel` y `thread_ts` antes de enviar el mensaje al subworkflow correspondiente.  
+  Se asegura de que el canal tenga un formato válido de Slack, elimina caracteres invisibles y reconstruye `thread_ts` si fuera necesario.  
+  Este nodo garantiza que el mensaje pueda ser respondido correctamente en el mismo hilo donde se originó.
+
+- **Configuración clave:**  
+  • Relee información del Slack Trigger en caso de que algún campo llegue vacío.  
+  • Limpia espacios, saltos de línea y caracteres no visibles en `channel`.  
+  • Valida que `channel` cumpla el patrón estándar de Slack (`C…` o `G…`).  
+  • Si el canal no es válido, agrega un flag `_fatal` para facilitar el debugging.  
+  • Produce un único item listo para enviar al subworkflow de definiciones.
+
+```js
+const S = v => (v == null ? '' : String(v)).trim();
+
+// Preferí valores del item; si faltan, re-leelos del Trigger
+const trig = $item(0, 'Slack Trigger')?.json || {};
+
+let channel =
+  S($json.channel) ||
+  S(trig.channel) ||
+  S(trig.event?.channel) ||
+  S(trig.body?.event?.channel) ||
+  '';
+
+channel = channel.replace(/[\s\r\n\t]+/g, '');       // quita \n, tabs, etc.
+
+// Si el channel NO parece un ID válido, no lo mandes (que se vea en logs)
+if (!/^[CG][A-Z0-9]+$/.test(channel)) {
+  return [{ ...$json, _fatal: `bad_channel:${channel}` }];
+}
+
+let thread_ts =
+  S($json.thread_ts) ||
+  S(trig.event?.thread_ts) ||
+  S($json.ts) ||
+  S(trig.event?.ts) ||
+  S(trig.ts) ||
+  '';
+
+return [{ ...$json, channel, thread_ts }];
+```
+
+---
+## Nodo 11 – EXE_FinancialDefinitions
+
+- **Nombre:** `EXE_FinancialDefinitions`  
+- **Tipo:** Execute Workflow (`n8n-nodes-base.executeWorkflow`)  
+- **Qué hace:**  
+  Llama al subworkflow de **Definiciones Financieras** y le pasa todos los parámetros necesarios para que ese flujo responda en el mismo hilo y canal donde el usuario habló.  
+  Este nodo es la puerta de entrada al flujo especializado que resuelve consultas de términos financieros.
+
+- **Configuración clave:**  
+  • Workflow llamado: **MT_FinancialDefinitions_Sub**  
+  • Inputs que se envían al subworkflow:  
+    - `text` (limpio si está disponible)  
+    - `channel`  
+    - `thread_ts`  
+    - `user`  
+  • Opción **Wait for Subworkflow** activada para recibir la respuesta del subworkflow y continuar el flujo correctamente.
+
+```json
+{
+  "text": {{$json.clean_text || $json.text}},
+  "channel": {{$json.channel}},
+  "thread_ts": {{$json.thread_ts}},
+  "user": {{$json.user}}
+}
+```
+
+---
+## Nodo 12 – EXE_RevenueConsult
+
+- **Nombre:** `EXE_RevenueConsult`  
+- **Tipo:** Execute Workflow (`n8n-nodes-base.executeWorkflow`)  
+- **Qué hace:**  
+  Envía el mensaje al subworkflow encargado de **consultas de revenue**.  
+  Pasa el texto del usuario (preferentemente el normalizado), el canal de Slack, el hilo y el usuario que originó la consulta.  
+  Ejecuta el subworkflow y espera su respuesta.
+
+- **Configuración clave:**  
+  • Workflow llamado: **Revenue Consult**  
+  • Inputs enviados:
+
+```json
+{
+  "text": "={{ $json.clean_text || $json.text }}",
+  "channel": "={{ $json.channel }}",
+  "thread_ts": "={{ $json.thread_ts }}",
+  "user": "={{ $json.user }}"
+}
+```
+
+---
+
+---
+## Nodo 13 – EXE_FraudScoring
+
+- **Nombre:** `EXE_FraudScoring`  
+- **Tipo:** Execute Workflow (`n8n-nodes-base.executeWorkflow`)  
+- **Qué hace:**  
+  Redirige el mensaje al subworkflow dedicado al **Fraud Scoring**, pasando todos los metadatos necesarios para responder al usuario en el hilo correcto.  
+  Este subworkflow calcula o recupera el puntaje de riesgo del usuario solicitado.
+
+- **Configuración clave:**  
+  • Workflow llamado: **WF_FraudScoring_Sub**  
+  • Inputs enviados:
+
+```json
+{
+  "text": "={{ $json.clean_text || $json.text }}",
+  "channel": "={{ $json.channel }}",
+  "thread_ts": "={{ $json.thread_ts }}",
+  "user": "={{ $json.user }}"
+}
+```
+
+---
+
+---
+## Nodo 14 – MT_UnkownMsg
+
+- **Nombre:** `MT_UnkownMsg`  
+- **Tipo:** Slack (`n8n-nodes-base.slack`)  
+- **Qué hace:**  
+  Este nodo gestiona los casos donde el intent es **unknown**.  
+  Envía al usuario un mensaje de ayuda explicando qué tipos de consultas entiende Milton (definiciones, revenue y scoring), junto con ejemplos.  
+  La respuesta se envía directamente al canal y al thread donde el usuario habló.
+
+- **Configuración clave:**  
+  • Tipo de operación: **Send Message**  
+  • Usa el mismo `channel` y `thread_ts` del mensaje original:
+
+```json
+{
+  "channelId": "={{ $json.channel }}",
+  "thread_ts": {
+    "replyValues": {
+      "thread_ts": "={{ $json.thread_ts }}",
+      "reply_broadcast": true
+    }
+  }
+}
+```
+
+---
