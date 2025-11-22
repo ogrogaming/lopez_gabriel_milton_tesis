@@ -8,4 +8,4 @@ Este repositorio contiene la documentación y el código utilizado en la constru
 - `/docs/` — Explicación de cada flujo y cada nodo.
 - `/imagenes/` — Capturas de pantallas de flujos y nodos.
 
-Más adelante completaré detalle de cada flujo.
+---
