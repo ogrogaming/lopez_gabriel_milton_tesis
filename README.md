@@ -6,7 +6,6 @@ Este repositorio contiene la documentación y el código utilizado en la constru
 ## Estructura del repositorio
 
 - `/docs/` — Explicación de cada flujo y cada nodo.
-- `/src/` — Código JavaScript de todos los Function nodes.
 - `/imagenes/` — Capturas de pantallas de flujos y nodos.
 
 Más adelante completaré detalle de cada flujo.
