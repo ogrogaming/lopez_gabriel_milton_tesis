@@ -408,3 +408,102 @@ return [{
 
 ---
 
+## Nodo 7 – MT_NormalizeIntent
+
+- **Nombre:** `MT_NormalizeIntent`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+- **Qué hace:**  
+  Estándariza el valor de `intent` generado por el clasificador.  
+  Asegura que siempre esté en minúsculas, sin espacios ni variaciones tipográficas.  
+  Esto evita fallas de ruteo en los siguientes nodos del flujo.
+
+- **Configuración clave:**  
+  • Recibe un único item ya parseado.  
+  • Normaliza el string del campo `intent`.  
+  • Devuelve el mismo objeto con el `intent` corregido.
+
+
+```js
+const intent = String($json.intent || 'unknown').toLowerCase().trim();
+return [{ ...$json, intent }];
+```
+
+---
+## Nodo 8 – MT_ComputeRouteIndex
+
+- **Nombre:** `MT_ComputeRouteIndex`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+- **Qué hace:**  
+  Convierte el `intent` ya normalizado en un **índice numérico** que será usado por el switch del ruteo.  
+  Este índice define a qué rama debe ir el mensaje (definiciones, revenue, scoring o desconocido).
+
+- **Mapeo lógico:**  
+  - `definitions` → **0**  
+  - `revenue` → **1**  
+  - `scoring` → **2**  
+  - cualquier otro → **3**
+
+- **Configuración clave:**  
+  • Recibe un único item con el campo `intent`.  
+  • Agrega un campo nuevo: `route_index`.  
+  • Se usa estrictamente como input del nodo `MT_IntentRouting`.
+
+```js
+const intent = String($json.intent || 'unknown').toLowerCase();
+
+let route_index = 0; // default: definitions
+
+if (intent === 'definitions') {
+  route_index = 0;
+} else if (intent === 'revenue') {
+  route_index = 1;
+} else if (intent === 'scoring') {
+  route_index = 2;
+} else {
+  // unknown → puedes decidir dónde cae (aquí, definitions)
+  route_index = 3;
+}
+
+return [{ ...$json, route_index }];
+
+```
+
+---
+## Nodo 9 – MT_IntentRouting
+
+- **Nombre:** `MT_IntentRouting`  
+- **Tipo:** Switch (`n8n-nodes-base.switch`)  
+- **Qué hace:**  
+  Es el **router principal** del orquestador.  
+  Toma el valor numérico `route_index` generado en el nodo anterior y bifurca el flujo en una de las cuatro ramas posibles:  
+  - 0 → Definiciones financieras  
+  - 1 → Revenue Q&A  
+  - 2 → Fraud Scoring  
+  - 3 → Mensaje de intent desconocido
+
+- **Configuración clave:**  
+  • Modo: **Expression**  
+  • Campo evaluado: `={{ $json.route_index }}`  
+  • Validación flexible de tipos activada (`looseTypeValidation: true`)  
+  • Cantidad de salidas: **4**, una por cada tipo de intención soportada.
+
+```js
+const intent = String($json.intent || 'unknown').toLowerCase();
+
+let route_index = 0; // default: definitions
+
+if (intent === 'definitions') {
+  route_index = 0;
+} else if (intent === 'revenue') {
+  route_index = 1;
+} else if (intent === 'scoring') {
+  route_index = 2;
+} else {
+  // unknown → puedes decidir dónde cae (aquí, definitions)
+  route_index = 3;
+}
+
+return [{ ...$json, route_index }];
+```
+
+---
