@@ -3065,4 +3065,278 @@ return outputs;
 ```
 
 ---
+## Nodo 23 – FS_SlackFormatter
 
+- **Nombre:** `FS_SlackFormatter`  
+- **Tipo:** AI Agent (`@n8n/n8n-nodes-langchain.agent`)  
+- **Qué hace:**  
+  Toma el resultado del scoring (`FS_ScoreResult`) y genera un **mensaje de fraude listo para Slack** usando un modelo de lenguaje como formateador.  
+  A partir de los campos calculados (`risk_assessment.risk_score`, `reasoning.summary`, `reasoning.top5_text`, `reasoning.calculations`), construye un texto claro con score, resumen y principales motivos, aplicando formato liviano para Slack.
+
+- **Configuración clave:**  
+  • `promptType`: `define` (prompt definido a mano).  
+  • `text`: arma un prompt concatenando:
+    - User ID  
+    - Final Risk Score  
+    - Summary  
+    - Top Reasons (unidos con `join("\n")`)  
+    - Calculations (también con `join("\n")`)  
+
+```text
+System Prompt:
+
+{{
+"Generate a Slack-friendly summary for this fraud scoring result:\n\n" +
+"User ID: " + $json.user_id + "\n" +
+"Final Risk Score: " + $json.risk_assessment.risk_score + "\n" +
+"Summary: " + $json.reasoning.summary + "\n" +
+"Top Reasons:\n" + $json.reasoning.top5_text.join("\n") + "\n" +
+"Calculations:\n" + $json.reasoning.calculations.join("\n")
+}}
+```
+
+```text
+User Prompt:
+You are a message formatter for Slack.
+
+Your task is to take a plain response and convert it into a clean, readable Slack message using appropriate formatting.
+
+⚠️ VERY IMPORTANT:
+- Use simple Slack markup (bold, italics, emojis, etc.), not markdown.
+- Avoid code blocks unless necessary.
+- Use emojis and spacing to improve readability.
+- Use bullet points for lists.
+
+Respond ONLY in pure JSON format with this structure:
+{
+  "output": "<formatted Slack message>"
+}
+
+Do not include user_id, channel, or thread_ts in your response.
+Do not include explanations or extra text outside the JSON.
+```
+
+---
+## Nodo 24 – FS_ParseSlackAIOutput
+
+- **Nombre:** `FS_ParseSlackAIOutput`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+- **Qué hace:**  
+  Este nodo toma la salida del modelo en **FS_SlackFormatter**, que viene en formato JSON dentro del campo `output`, y extrae el texto final que debe ser enviado a Slack.  
+  Su objetivo es garantizar que el mensaje final quede en un campo plano `text`, sin estructuras complejas ni objetos anidados.
+
+  El nodo:
+  - lee el JSON devuelto por el agente,  
+  - detecta si `output` es string u objeto,  
+  - si el modelo devolvió un objeto `{ "output": "mensaje" }`, lo extrae,  
+  - si devolvió un JSON anidado, lo flatea,  
+  - elimina cualquier wrapper residual,  
+  - devuelve un único item con el campo limpio `text`.
+
+  No modifica `channel` ni `thread_ts`, que vienen ya arrastrados desde `FS_ScoreResult`.
+
+- **Configuración clave:**  
+  • Entrada: JSON generado por FS_SlackFormatter.  
+  • Salida:  
+    ```json
+    {
+      "text": "<mensaje formateado>",
+      "channel": "...",
+      "thread_ts": "..."
+    }
+    ```  
+  • Asegura que siempre exista un `text` interpretable por Slack.
+
+- **Código representativo del nodo:**
+
+```js
+// Lee el texto devuelto por el AI Agent
+let raw = $json.output;
+
+try {
+  const parsed = JSON.parse(raw);
+
+  return [
+    {
+      json: {
+        output: parsed.output || raw,
+        // Forzamos a string el user_id
+        user_id: String(parsed.user_id || ""),
+        channel: parsed.channel || null,
+        thread_ts: parsed.thread_ts || null
+      }
+    }
+  ];
+} catch (e) {
+  return [
+    {
+      json: {
+        output: raw,
+        user_id: "",
+        channel: null,
+        thread_ts: null
+      }
+    }
+  ];
+}
+```
+
+---
+## Nodo 25 – FS_ReinjectContextAfterScore
+
+- **Nombre:** `FS_ReinjectContextAfterScore`  
+- **Tipo:** Merge (`n8n-nodes-base.merge`)  
+- **Modo:** *Multiplex / Pass-through* (según configuración del JSON)
+
+- **Qué hace:**  
+  Este nodo vuelve a unir **dos ramas distintas del flujo** después de que ya se calculó el score y se formateó el mensaje:
+
+  1. **La rama del scoring final** (sale de `FS_ParseSlackAIOutput`)  
+     → contiene el mensaje final ya listo para imprimir en Slack (`text`).
+
+  2. **La rama del contexto liviano** (sale de `FS_PassContext`)  
+     → contiene únicamente `user_id`, `channel` y `thread_ts`.
+
+  El objetivo es **reinyectar el contexto de Slack** (canal e hilo) en el mensaje final formateado, para que el último nodo (`FS_SendMessage`) sepa exactamente dónde debe publicar la respuesta.
+
+  En pocas palabras:  
+  **este merge junta “mensaje final” + “metadatos de Slack” en un único item.**
+
+- **Configuración clave:**  
+  • Tiene **2 inputs**:  
+    - Input 1 → mensaje ya formateado  
+    - Input 2 → contexto (canal, thread_ts, user_id)  
+  • Combina ambos en un único item.  
+  • No modifica contenido; solo garantiza que el último nodo tenga:
+
+    ```json
+    {
+      "text": "<mensaje listo para Slack>",
+      "channel": "...",
+      "thread_ts": "...",
+      "user_id": "<id>"
+    }
+    ```
+
+  • Es un paso técnico esencial para no perder el hilo original de Slack.
+
+---
+## Nodo 26 – FS_SlackFormatterContext
+
+- **Nombre:** `FS_SlackFormatterContext`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+
+- **Qué hace:**  
+  Este nodo toma la salida combinada de `FS_ReinjectContextAfterScore` y **normaliza el objeto final** que se usará para enviar el mensaje a Slack.  
+  Extrae el texto del mensaje (`output`/`text`/`message`) y vuelve a asegurar que `channel` y `thread_ts` estén presentes, usando como respaldo el segundo item de entrada si hace falta.
+
+- **Configuración clave:**  
+  - Entrada: 2 items combinados por el merge anterior (mensaje + contexto).  
+  - Usa el **primer item** como fuente principal y el **segundo** como respaldo de `channel` y `thread_ts`.  
+  - Devuelve un único item con estructura:
+    - `output`: texto final listo para enviar a Slack.  
+    - `channel`: canal donde responder.  
+    - `thread_ts`: hilo donde responder.
+
+- **Código del nodo:**
+
+```js
+const input = $input.item.json;
+const prev = $input.all()[1]?.json || {}; // usa segundo input solo si existe
+
+return [
+  {
+    json: {
+      output: input.output || input.text || input.message || "No message generated.",
+      channel: input.channel || prev.channel || null,
+      thread_ts: input.thread_ts || prev.thread_ts || null
+    }
+  }
+];
+```
+
+---
+## Nodo 27 – FS_SlackPrep
+
+- **Nombre:** `FS_SlackPrep`  
+- **Tipo:** Code (`n8n-nodes-base.code`)  
+
+- **Qué hace:**  
+  Prepara la estructura base del mensaje que se va a enviar a Slack **después de calcular el score**.  
+  Toma el output bruto de `FS_SlackFormatter` (el mensaje formateado por IA o por reglas internas, según el flujo) y lo empaqueta en un campo uniforme llamado `output_text`, listo para ser pasado al nodo que lo va a parsear y finalmente enviar.
+
+  Este nodo:
+  - extrae cualquier versión del texto (`text`, `output`, etc.),  
+  - limpia espacios,  
+  - lo normaliza bajo el campo `output_text`,  
+  - mantiene `channel` y `thread_ts` intactos, ya que son esenciales para responder en el hilo correcto.
+
+- **Configuración clave:**  
+  • Entrada: resultado del formateo previo (FS_SlackFormatter).  
+  • Salida: un único item con:
+    - `output_text`: texto final sin procesar adicional  
+    - `channel`: canal de Slack  
+    - `thread_ts`: timestamp del hilo  
+
+- **Código exacto del nodo (según JSON):**
+
+```js
+// FS_SlackPrep — versión segura para ejecución manual o encadenada
+const inputs = $input.all();
+const input = inputs[0]?.json || {};
+
+// El AI Agent devuelve "output" (texto formateado)
+const text = input.output || input.output_text || "No message content.";
+
+// Intentamos recuperar channel y thread desde el input actual o de items previos
+let channel = input.channel || null;
+let thread_ts = input.thread_ts || null;
+
+// Si no los encuentra, busca en cualquier otro input anterior
+for (const item of inputs) {
+  if (!channel && item.json.channel) channel = item.json.channel;
+  if (!thread_ts && item.json.thread_ts) thread_ts = item.json.thread_ts;
+}
+
+// Devuelve el objeto listo para Slack
+return [
+  {
+    json: {
+      text,
+      channel,
+      thread_ts
+    }
+  }
+];
+```
+
+---
+## Nodo 28 – FS_SendMessage
+
+- **Nombre:** `FS_SendMessage`  
+- **Tipo:** Slack → Send Message (`n8n-nodes-base.slack`)  
+
+- **Qué hace:**  
+  Este es **el último nodo del flujo de Fraud Scoring**.  
+  Toma el mensaje ya preparado en `FS_SlackPrep` y lo envía directamente al **canal y al hilo de Slack** donde se originó la consulta del analista.  
+  Publica el texto final en formato plain text o Markdown light (según configuración), sin agregar bloques adicionales.
+
+- **Configuración clave:**  
+  • Operación: `Message → Send → Simple Text Message`  
+  • `text`:  
+    ```js
+    ={{ $json.output_text }}
+    ```  
+  • `channelId`:  
+    ```js
+    ={{ $json.channel }}
+    ```  
+  • `thread_ts`:  
+    ```js
+    ={{ $json.thread_ts }}
+    ```  
+  • “Use Markdown?” → activado, para permitir negritas, saltos de línea y listas simples.  
+  • No incluye archivos adjuntos, bloques interactivos ni botones.  
+  • Usa la credencial de Slack configurada como “Milton Account”.
+
+---
