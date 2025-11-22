@@ -1,6 +1,6 @@
-# Flujo de Ingresos (WF_RevenueConsult_Sub)
+# Flujo de Ingresos 
 
-Este sub-workflow procesa las consultas de revenue que el orquestador le deriva a Milton. Recibe el texto de la pregunta y los metadatos de Slack, normaliza el mensaje, extrae filtros (fechas, países, taxonomía, merchant), construye y ejecuta una consulta SQL sobre el data warehouse y finalmente devuelve una respuesta resumida y formateada para Slack. :contentReference[oaicite:0]{index=0}  
+Este sub-workflow procesa las consultas de revenue que el orquestador le deriva a Milton. Recibe el texto de la pregunta y los metadatos de Slack, normaliza el mensaje, extrae filtros (fechas, países, taxonomía, merchant), construye y ejecuta una consulta SQL sobre el data warehouse y finalmente devuelve una respuesta resumida y formateada para Slack.
 
 ---
 
@@ -34,8 +34,11 @@ Este sub-workflow procesa las consultas de revenue que el orquestador le deriva 
         { "name": "thread_ts", "type": "any" }
       ]
     }
+  }
 ```
 
 ---
-  }
+
+
+  
 }
