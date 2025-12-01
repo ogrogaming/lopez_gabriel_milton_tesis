@@ -7,7 +7,7 @@ Este repositorio contiene la documentación y el código utilizado en la constru
 
 ## Estructura del repositorio
 
-- `/docs/` — Explicación de cada flujo y cada nodo.
-- `/imagenes/` — Capturas de pantallas de gráficos, flujos y nodos.
+- `/docs/` — Explicación de cada flujo y cada nodo (incluye código en los md).
+- `/imagenes/` — Capturas de pantallas de gráficos, flujos y nodos (incluye código python de gráfico).
 
 ---
