@@ -6,6 +6,6 @@ Este repositorio contiene la documentación y el código utilizado en la constru
 ## Estructura del repositorio
 
 - `/docs/` — Explicación de cada flujo y cada nodo.
-- `/imagenes/` — Capturas de pantallas de flujos y nodos.
+- `/imagenes/` — Capturas de pantallas de gráficos, flujos y nodos.
 
 ---
